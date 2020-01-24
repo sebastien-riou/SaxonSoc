@@ -199,11 +199,19 @@ object Arty7LinuxSystem{
         dataWidth = 8,
         timerWidth = 12,
         spi = SpiXdrParameter(
-          dataWidth = 2,
+          dataWidth = 4,
           ioRate = 1,
           ssWidth = 2
         )
-      ) .addFullDuplex(id = 0),
+    ).addFullDuplex(
+        id = 0
+    ).addHalfDuplex(
+        id=1, rate=1, ddr=false, spiWidth=2, ouputHighWhenIdle=false
+    ).addHalfDuplex(
+        id=2, rate=1, ddr=true, spiWidth=2, ouputHighWhenIdle=false
+    ).addHalfDuplex(
+        id=3, rate=1, ddr=true, spiWidth=4, ouputHighWhenIdle=false
+    ),
       cmdFifoDepth = 256,
       rspFifoDepth = 256
     )
@@ -240,7 +248,9 @@ object Arty7Linux {
     mainClockCtrl.resetSensitivity.load(ResetSensitivity.NONE)
     sdramDomain.phyA.sdramLayout.load(MT41K128M16JT.layout)
     Arty7LinuxSystem.default(system, mainClockCtrl)
-    system.ramA.hexInit.load("software/standalone/bootloader/build/bootloader.hex")
+    system.ramA.size.load(8 KiB)
+    //system.ramA.hexInit.load("software/standalone/bootloader/build/bootloader.hex")
+    system.ramA.hexInit.load("software/standalone/spiDemo/build/spiDemo.hex")
     system.cpu.produce(out(Bool).setName("inWfi") := system.cpu.config.plugins.find(_.isInstanceOf[CsrPlugin]).get.asInstanceOf[CsrPlugin].inWfi)
     g
   }
