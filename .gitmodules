@@ -1,6 +1,7 @@
 [submodule "ext/SpinalHDL"]
 	path = ext/SpinalHDL
-	url = https://github.com/SpinalHDL/SpinalHDL.git
+	url = https://github.com/sebastien-riou/SpinalHDL.git
+    branch = SpiXdr
 [submodule "ext/VexRiscv"]
 	path = ext/VexRiscv
 	url = https://github.com/SpinalHDL/VexRiscv.git
