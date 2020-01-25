@@ -169,8 +169,8 @@ void main() {
         spi_write_sr1cr1(sr1,cr1|CR1_QUAD);
     }
 
-    //uint8_t test[] = {0,1,0,2,0,3,0};
-    uint8_t test[] = {2,3};
+    uint8_t test[] = {0,1,0,2,0,3,0};
+    //uint8_t test[] = {0,3};
     for(int i=0;i<sizeof(test);i++){
         int mode=test[i];
         assert_eq32(0x89ABCDEF,fast_read32(mode,0x123456));

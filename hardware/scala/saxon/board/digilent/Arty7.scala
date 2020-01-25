@@ -27,12 +27,11 @@ import vexriscv.plugin.CsrPlugin
 class Arty7LinuxSystem() extends SaxonSocLinux{
   //Add components
   val gpioA = Apb3GpioGenerator(0x00000)
-  val spiA = new Apb3SpiGenerator(0x20000){
+  val spiA = new Apb3SpiGenerator(0x20000, xipOffset = 0x20000000){
     val user = produce(master(phy.withoutSs.toSpi()).setName("system_spiA_user")) //TODO automatic naming
     val flash = produce(master(phy.decode(ssId = 0).toSpi()).setName("system_spiA_flash")) //TODO automatic naming
     val sdcard = produce(master(phy.decode(ssId = 1).toSpi()).setName("system_spiA_sdcard")) //TODO automatic naming
   }
-
 
   val ramA = BmbOnChipRamGenerator(0x20000000l)
   ramA.dataWidth.load(32)
@@ -106,6 +105,47 @@ class Arty7Linux extends Generator{
     sdramApbBridge.outputClockDomain.merge(sdramClockCtrl.clockDomain)
   }
 
+  /*val spiA_wrap = add task new Area{
+      //val spiA_flash_do = out Bits(4 bits)
+      val spiA_flash_do = out Vec(Bool,4)
+      val spiA_flash_oe = out Vec(Bool,4)
+      //val spiA_flash_oe = out Bits(4 bits)
+      val single_mode = Bool
+      system.spiA.flash.produce(
+          single_mode := system.spiA.flash.data(0).writeEnable & !system.spiA.flash.data(1).writeEnable
+      )
+      //system.spiA.flash.produce(system.spiA.flash.data(0).read(0) := di)
+      system.spiA.flash.produce(
+          for ((do_pin, data) <- (spiA_flash_do.slice(0,2), system.spiA.flash.data.slice(0,2)).zipped) yield new Area {
+              do_pin := data.write.setAsDirectionLess().asBools(0)
+          }
+      )
+      system.spiA.flash.produce(
+      for ((oe_pin, data) <- (spiA_flash_oe.slice(0,2), system.spiA.flash.data.slice(0,2)).zipped) yield new Area {
+          oe_pin := data.writeEnable.setAsDirectionLess()
+      })
+      system.spiA.flash.produce(
+          for ((do_pin, data) <- (spiA_flash_do.slice(2,4), system.spiA.flash.data.slice(2,4)).zipped) yield new Area {
+              when(single_mode){
+                  do_pin := True
+              } otherwise {
+                  do_pin := data.write.setAsDirectionLess().asBools(0)
+              }
+          }
+      )
+      system.spiA.flash.produce(
+      for ((oe_pin, data) <- (spiA_flash_oe.slice(2,4), system.spiA.flash.data.slice(2,4)).zipped) yield new Area {
+          when(single_mode){
+              oe_pin := True
+          } otherwise {
+              oe_pin := data.writeEnable.setAsDirectionLess()
+          }
+      })
+      //system.spiA.flash.produce(spiA_flash_do(0) := system.spiA.flash.data(0).write.setAsDirectionLess().asBools(0))
+      //system.spiA.flash.produce(spiA_flash_do(1) := system.spiA.flash.data(1).write.setAsDirectionLess().asBools(0))
+      //system.spiA.flash.produce(spiA_flash_do(2) := system.spiA.flash.data(2).write.setAsDirectionLess().asBools(0))
+      //system.spiA.flash.produce(spiA_flash_do(3) := system.spiA.flash.data(3).write.setAsDirectionLess().asBools(0))
+  }*/
   val clocking = add task new Area{
     val GCLK100 = in Bool()
 
@@ -158,9 +198,9 @@ class Arty7Linux extends Generator{
 
   val startupe2 = system.spiA.flash.produce(
     STARTUPE2.driveSpiClk(system.spiA.flash.sclk.setAsDirectionLess())
+    //STARTUPE2.driveSpiClk(system.spiA.flash.sclk.write.setAsDirectionLess().asBools(0))
   )
 }
-
 
 
 object Arty7LinuxSystem{
@@ -213,8 +253,30 @@ object Arty7LinuxSystem{
         id=3, rate=1, ddr=true, spiWidth=4, ouputHighWhenIdle=false
     ),
       cmdFifoDepth = 256,
-      rspFifoDepth = 256
+      rspFifoDepth = 256 /*,
+      cpolInit = false,
+      cphaInit = false,
+      modInit = 0,
+      sclkToogleInit = 0,
+      ssSetupInit = 0,
+      ssHoldInit = 0,
+      ssDisableInit = 0,
+      xipConfigWritable = false,
+      xipEnableInit = true,
+      xipInstructionEnableInit = true,
+      xipInstructionModInit = 0,
+      xipAddressModInit = 0,
+      xipDummyModInit = 0,
+      xipPayloadModInit = 1,
+      xipInstructionDataInit = 0x3B,
+      xipDummyCountInit = 0,
+      xipDummyDataInit = 0xFF*/
     )
+    //spiA.withXip.load(true)
+
+    /*interconnect.addConnection(
+      bridge.bmb -> List(spiA.bmb)
+  )*/
 
     interconnect.setConnector(peripheralBridge.input){case (m,s) =>
       m.cmd.halfPipe >> s.cmd
@@ -252,6 +314,23 @@ object Arty7Linux {
     //system.ramA.hexInit.load("software/standalone/bootloader/build/bootloader.hex")
     system.ramA.hexInit.load("software/standalone/spiDemo/build/spiDemo.hex")
     system.cpu.produce(out(Bool).setName("inWfi") := system.cpu.config.plugins.find(_.isInstanceOf[CsrPlugin]).get.asInstanceOf[CsrPlugin].inWfi)
+
+    /*val spiA_wrap = add task new Area{
+        val io = new Bundle {
+          val di = in Bool
+          //val do = out Bool(4)
+          //val oe = out Bool(4)
+        }
+        system.spiA.flash.produce(
+            system.spiA.flash.data(0).read(0) := io.di
+        )
+        //spiA.flash.data(1).read := io.di(1)
+        //spiA.flash.data(2).read := io.di(2)
+        //spiA.flash.data(3).read := io.di(3)
+    }*/
+
+
+
     g
   }
 
@@ -267,9 +346,35 @@ object Arty7Linux {
 }
 
 
+object Arty7LinuxQuad {
+  //Function used to configure the SoC
+  def default(g : Arty7Linux) = g{
+    import g._
+    mainClockCtrl.resetSensitivity.load(ResetSensitivity.NONE)
+    sdramDomain.phyA.sdramLayout.load(MT41K128M16JT.layout)
+    Arty7LinuxSystem.default(system, mainClockCtrl)
+    system.ramA.size.load(8 KiB)
+    //system.ramA.hexInit.load("software/standalone/bootloader/build/bootloader.hex")
+    system.ramA.hexInit.load("software/standalone/spiDemo/build/spiDemo.hex")
+    system.cpu.produce(out(Bool).setName("inWfi") := system.cpu.config.plugins.find(_.isInstanceOf[CsrPlugin]).get.asInstanceOf[CsrPlugin].inWfi)
+    g
+  }
 
+  case class soc_quad() extends Component{
+      //need to connect all I/Os from soc at that level ?
+      val soc = default(new Arty7Linux()).toComponent()
+  }
+  //Generate the SoC
+  def main(args: Array[String]): Unit = {
 
-
+    val report = SpinalRtlConfig
+      .copy(
+        defaultConfigForClockDomains = ClockDomainConfig(resetKind = SYNC),
+        inlineRom = true
+    ).generateVerilog(InOutWrapper(new soc_quad()))
+    BspGenerator("Arty7Linux", report.toplevel.soc.generator, report.toplevel.soc.generator.system.cpu.dBus)
+  }
+}
 
 object Arty7LinuxSystemSim {
   import spinal.core.sim._
