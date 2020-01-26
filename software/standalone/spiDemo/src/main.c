@@ -13,10 +13,10 @@ void init(){
     spiA.cpol = 1;
     spiA.cpha = 1;
     spiA.mode = 0; //Assume full duplex (standard SPI)
-    spiA.clkDivider = 24;
-    spiA.ssSetup = 24;
-    spiA.ssHold = 24;
-    spiA.ssDisable = 24;
+    spiA.clkDivider = 20;
+    spiA.ssSetup = 20;
+    spiA.ssHold = 20;
+    spiA.ssDisable = 20;
     spi_applyConfig(SPI, &spiA);
 }
 
@@ -48,6 +48,46 @@ void assert_eq32(uint32_t a,uint32_t b){
 #define FAST_READ4x_DDR_IO 0xED
 const uint8_t mode2op[] = {FAST_READ1X_SDR,FAST_READ2x_SDR_IO,FAST_READ2x_DDR_IO,FAST_READ4x_DDR_IO};
 
+
+uint32_t fast_read32_quad_init(uint32_t addr){
+    spi_select(SPI, 0);
+	spi_write(SPI, FAST_READ4x_DDR_IO);
+    spiA.mode = 3;
+    while(spi_cmdAvailability(SPI) != 0x100);
+    spi_applyConfig(SPI, &spiA);
+    spi_write(SPI, addr >> 16);
+	spi_write(SPI, addr >>  8);
+	spi_write(SPI, addr >>  0);
+    spi_write(SPI, 0x5A);//mode cycles
+    for(int i=0;i<6;i++) spi_read(SPI);//dummy cycles
+    uint32_t out = spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+	return out;
+}
+uint32_t fast_read32_quad_next(void){
+    uint32_t out = spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+	return out;
+}
+uint32_t fast_read32_quad(uint32_t addr){
+    spi_diselect(SPI, 0);
+    //while(spi_cmdAvailability(SPI) != 0x100);
+    spi_select(SPI, 0);
+	spi_write(SPI, addr >> 16);
+	spi_write(SPI, addr >>  8);
+	spi_write(SPI, addr >>  0);
+    spi_write(SPI, 0x5A);//mode cycles
+    for(int i=0;i<6;i++) spi_read(SPI);//dummy cycles
+    uint32_t out = spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+    out = (out<<8) | spi_read(SPI);
+	return out;
+}
 uint32_t fast_read32(uint8_t mode, uint32_t addr){
     spi_select(SPI, 0);
 	spi_write(SPI, mode2op[mode]);
@@ -75,11 +115,6 @@ uint32_t fast_read32(uint8_t mode, uint32_t addr){
             for(int i=0;i<6;i++) spi_read(SPI);//dummy cycles
             break;
     }
-    /*if(mode==1){
-        spiA.mode = mode;
-        while(spi_cmdAvailability(SPI) != 0x100);
-        spi_applyConfig(SPI, &spiA);
-    }*/
 	uint32_t out = spi_read(SPI);
     out = (out<<8) | spi_read(SPI);
     out = (out<<8) | spi_read(SPI);
@@ -153,9 +188,6 @@ void spi_write_sr1cr1(uint8_t sr1,uint8_t cr1){
     spi_write(SPI,cr1);
     spi_diselect(SPI, 0);
     while(spi_write_enabled());
-    //spi_select(SPI, 0);
-    //spi_write(SPI,SPI_FLASH_WRDIS);
-    //spi_diselect(SPI, 0);
 }
 void main() {
     GPIO_A->OUTPUT = 0xA;
@@ -169,13 +201,21 @@ void main() {
         spi_write_sr1cr1(sr1,cr1|CR1_QUAD);
     }
 
-    uint8_t test[] = {0,1,0,2,0,3,0};
+    uint8_t test[] = {0,1,2,3,0};
     //uint8_t test[] = {0,3};
     for(int i=0;i<sizeof(test);i++){
         int mode=test[i];
         assert_eq32(0x89ABCDEF,fast_read32(mode,0x123456));
         GPIO_A->OUTPUT = mode;
     }
+    assert_eq32(0x89ABCDEF,fast_read32_quad_init(0x123456));
+    GPIO_A->OUTPUT = 0xB;
+    assert_eq32(0x00010203,fast_read32_quad_next());
+    GPIO_A->OUTPUT = 0xC;
+    assert_eq32(0x04050607,fast_read32_quad_next());
+    GPIO_A->OUTPUT = 0xD;
+    assert_eq32(0x89ABCDEF,fast_read32_quad(0x123456));
+    GPIO_A->OUTPUT = 0x0;
 
     while(1){
         GPIO_A->OUTPUT = 0xF & (GPIO_A->OUTPUT+1);
