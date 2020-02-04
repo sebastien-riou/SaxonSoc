@@ -9,6 +9,8 @@
 
 
 #define GPIO_A    ((Gpio_Reg*)(SYSTEM_GPIO_A_APB))
+#define GPIO_B    ((Gpio_Reg*)(SYSTEM_GPIO_B_APB))
+#define GPIO_USER GPIO_B
 #define UART_A      ((Uart_Reg*)(SYSTEM_UART_A_APB))
 #define UART_CONSOLE  UART_A
 #define I2C_A ((I2c_Reg*)(SYSTEM_I2C_A_APB))
@@ -24,4 +26,4 @@
 #endif
 
 
-#endif 
+#endif

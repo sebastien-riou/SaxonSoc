@@ -2,35 +2,9 @@
 
 #include "saxon.h"
 #include "spi.h"
-//#include "spiDemo.h"
-#include "spiFlash.h"
 
-#define SPI ((Spi_Reg*)(SYSTEM_SPI_A_APB))
+#define SPI ((Spi_Reg*)(SYSTEM_SPI_B_APB))
 #define SPI_CS 0
-Spi_Config spiA;
-void init(){
-    //SPI init
-    spiA.cpol = 1;
-    spiA.cpha = 1;
-    spiA.mode = 0; //Assume full duplex (standard SPI)
-    spiA.clkDivider = 20;
-    spiA.ssSetup = 20;
-    spiA.ssHold = 20;
-    spiA.ssDisable = 20;
-    spi_applyConfig(SPI, &spiA);
-}
-
-void init_xip(){
-    //SPI init
-    spiA.cpol = 1;
-    spiA.cpha = 1;
-    spiA.mode = 0; //Assume full duplex (standard SPI)
-    spiA.clkDivider = 0;
-    spiA.ssSetup = 0;
-    spiA.ssHold = 0;
-    spiA.ssDisable = 0;
-    spi_applyConfig(SPI, &spiA);
-}
 
 void print_hex_digit(uint8_t digit){
 	uart_write(UART_A, digit < 10 ? '0' + digit : 'A' + digit - 10);
@@ -44,7 +18,7 @@ void print_hex_byte(uint8_t byte){
 
 void assert_true(int a){
 	while(!a){
-		GPIO_A->OUTPUT = 0xE;
+		GPIO_USER->OUTPUT = 0xE;
 		while(1);
 	}
 }
@@ -52,89 +26,100 @@ void assert_eq32(uint32_t a,uint32_t b){
 	assert_true(a==b);
 }
 
-
-#define FAST_READ1X_SDR 0x0B
-#define FAST_READ2x_SDR 0x3B
-#define FAST_READ2x_SDR_IO 0xBB
-#define FAST_READ2x_DDR_IO 0xBD
-#define FAST_READ4x_DDR_IO 0xED
-const uint8_t mode2op[] = {FAST_READ1X_SDR,FAST_READ2x_SDR_IO,FAST_READ2x_DDR_IO,FAST_READ4x_DDR_IO};
-
-
-uint32_t fast_read32_quad_init(uint32_t addr){
-    spi_select(SPI, 0);
-	spi_write(SPI, FAST_READ4x_DDR_IO);
-    spiA.mode = 3;
-    while(spi_cmdAvailability(SPI) != 0x100);
-    spi_applyConfig(SPI, &spiA);
-    spi_write(SPI, addr >> 16);
-	spi_write(SPI, addr >>  8);
-	spi_write(SPI, addr >>  0);
-    spi_write(SPI, 0x5A);//mode cycles
-    for(int i=0;i<6;i++) spi_read(SPI);//dummy cycles
-    uint32_t out = spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-	return out;
+void print_hex(uint32_t val, uint32_t digits)
+{
+	for (int i = (4*digits)-4; i >= 0; i -= 4)
+		uart_write(UART_A, "0123456789ABCDEF"[(val >> i) % 16]);
 }
-uint32_t fast_read32_quad_next(void){
-    uint32_t out = spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-	return out;
+
+uint32_t readUInt() {
+  uint32_t r = 0;
+  for(int i=0;i<4;i++) {
+    while(!(UART_A->STATUS >> 24));
+    uint8_t c = UART_A->DATA;
+    r <<= 8;
+    r |= c;
+  }
+  return r;
 }
-uint32_t fast_read32_quad(uint32_t addr){
-    spi_diselect(SPI, 0);
-    //while(spi_cmdAvailability(SPI) != 0x100);
-    spi_select(SPI, 0);
-	spi_write(SPI, addr >> 16);
-	spi_write(SPI, addr >>  8);
-	spi_write(SPI, addr >>  0);
-    spi_write(SPI, 0x5A);//mode cycles
-    for(int i=0;i<6;i++) spi_read(SPI);//dummy cycles
-    uint32_t out = spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-	return out;
+
+void print(uint8_t * data) {
+  uart_writeStr(UART_A, data);
 }
-uint32_t fast_read32(uint8_t mode, uint32_t addr){
-    spi_select(SPI, 0);
-	spi_write(SPI, mode2op[mode]);
-    if(mode>0){
-        spiA.mode = mode;
-        while(spi_cmdAvailability(SPI) != 0x100);
-        spi_applyConfig(SPI, &spiA);
-    }
-    spi_write(SPI, addr >> 16);
-	spi_write(SPI, addr >>  8);
-	spi_write(SPI, addr >>  0);
-    switch(mode2op[mode]){
-        case FAST_READ1X_SDR:
-        case FAST_READ2x_SDR:
-        case FAST_READ2x_SDR_IO:
-            spi_write(SPI, 0);//dummy cycles
-            break;
-        case FAST_READ2x_DDR_IO://0 mode, 6 dummies
-            spi_write(SPI, 0);//dummy cycles
-            spi_write(SPI, 0);//dummy cycles
-            spi_write(SPI, 0);//dummy cycles
-            break;
-        case FAST_READ4x_DDR_IO://1 mode, 6 dummies
-            spi_write(SPI, 0);//mode cycles
-            for(int i=0;i<6;i++) spi_read(SPI);//dummy cycles
-            break;
-    }
-	uint32_t out = spi_read(SPI);//That's big endian while XIP read little
-    out = (out<<8) | spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-    out = (out<<8) | spi_read(SPI);
-	spi_diselect(SPI, 0);
-    spiA.mode = 0;//revert to standard SPI
-    spi_applyConfig(SPI, &spiA);
-    return out;
+
+
+#define N25Q
+
+#include "spi_b.h"
+void flash_spi_select(bool enable){spib_select(enable,SPI_CS,SPI);}
+void flash_spi_config(const spi_config_t *const spi_config){spib_config(spi_config,SPI);}
+void flash_spi_write(const void*const src, uint32_t size){spib_write(src,size,SPI);}
+void flash_spi_read(void*const dst, uint32_t size){spib_read(dst,size,SPI);}
+static void flash_spi_write8(uint8_t b){flash_spi_write(&b,1);}
+#ifdef S25FL
+#include "s25fl.h"
+static void     flash_init(void){s25fl_init();}
+static void     flash_bulk_erase(void) {s25fl_bulk_erase();}
+static void     flash_wait(void) {s25fl_wait();}
+static void     flash_erase_sector(uint32_t addr) {s25fl_erase_sector(addr);}
+static void     flash_write(const void*const src, uint32_t size, uint32_t addr){s25fl_write(src, size, addr);}
+static void     flash_read_with_config(void*const dst, uint32_t size, uint32_t addr, const spi_config_t*const config){s25fl_read_with_config(dst, size, addr, config);}
+static void     flash_basic_read(void*const dst, uint32_t size, uint32_t addr) {s25fl_basic_read(dst, size, addr);}
+static void     flash_read_id(void*const dst, uint32_t size, uint32_t addr) {s25fl_read_id(dst, size, addr);}
+static void     flash_read(void*const dst, uint32_t size, uint32_t addr) {s25fl_read(dst, size, addr);}
+static void     flash_read_last(void*const dst, uint32_t size, uint32_t addr) {s25fl_read_last(dst, size, addr);}
+static uint32_t flash_read32(uint32_t addr){s25fl_read32(addr);}
+static uint32_t flash_read32_last(uint32_t addr){s25fl_read32_last(addr);}
+#define SFDP_HDR_BASE S25FL_SFDP_HDR_BASE
+#define SFDP_HDR_SIZE S25FL_SFDP_HDR_SIZE
+#define IDCFI_BASE    S25FL_IDCFI_BASE
+#define IDCFI_SIZE    S25FL_IDCFI_SIZE
+#endif
+#ifdef N25Q
+#include "n25q.h"
+static void     flash_init(void){n25q_init();}
+static void     flash_bulk_erase(void) {n25q_bulk_erase();}
+static void     flash_wait(void) {n25q_wait();}
+static void     flash_erase_sector(uint32_t addr) {n25q_erase_sector(addr);}
+static void     flash_write(const void*const src, uint32_t size, uint32_t addr){n25q_write(src, size, addr);}
+static void     flash_read_with_config(void*const dst, uint32_t size, uint32_t addr, const spi_config_t*const config){n25q_read_with_config(dst, size, addr, config);}
+static void     flash_basic_read(void*const dst, uint32_t size, uint32_t addr) {n25q_basic_read(dst, size, addr);}
+static void     flash_read_id(void*const dst, uint32_t size, uint32_t addr) {n25q_read_id(dst, size, addr);}
+//static void     flash_read(void*const dst, uint32_t size, uint32_t addr) {n25q_read(dst, size, addr);}
+//static void     flash_read_last(void*const dst, uint32_t size, uint32_t addr) {n25q_read_last(dst, size, addr);}
+//static uint32_t flash_read32(uint32_t addr){n25q_read32(addr);}
+//static uint32_t flash_read32_last(uint32_t addr){n25q_read32_last(addr);}
+#define SFDP_HDR_BASE N25Q_SFDP_HDR_BASE
+#define SFDP_HDR_SIZE N25Q_SFDP_HDR_SIZE
+#define IDCFI_BASE    N25Q_IDCFI_BASE
+#define IDCFI_SIZE    N25Q_IDCFI_SIZE
+#endif
+
+
+
+Spi_Config spi_cfg;
+void init(){
+    //SPI init
+    spi_cfg.cpol = 1;
+    spi_cfg.cpha = 1;
+    spi_cfg.mode = 0; //Assume full duplex (standard SPI)
+    spi_cfg.clkDivider = 20;
+    spi_cfg.ssSetup = 20;
+    spi_cfg.ssHold = 20;
+    spi_cfg.ssDisable = 20;
+    spi_applyConfig(SPI, &spi_cfg);
+}
+
+void init_xip(){
+    //SPI init
+    spi_cfg.cpol = 1;
+    spi_cfg.cpha = 1;
+    spi_cfg.mode = 0; //Assume full duplex (standard SPI)
+    spi_cfg.clkDivider = 0;
+    spi_cfg.ssSetup = 0;
+    spi_cfg.ssHold = 0;
+    spi_cfg.ssDisable = 0;
+    spi_applyConfig(SPI, &spi_cfg);
 }
 
 void demo_id(void){
@@ -170,93 +155,158 @@ void demo_id(void){
     }
 }
 
-#define SPI_FLASH_READ_SR1 0x05
-#define SR1_WIP 1
-#define SR1_WEL 2
-
-#define SPI_FLASH_READ_CR1 0x35
-#define CR1_QUAD 2
-
-uint8_t spi_read_reg(uint8_t reg){
-    spi_select(SPI, 0);
-    spi_write(SPI, reg);
-    uint8_t out=spi_read(SPI);
-    spi_diselect(SPI, 0);
-    return out;
-}
-uint8_t spi_read_sr1(void){return spi_read_reg(SPI_FLASH_READ_SR1);}
-int spi_write_enabled(void){return (spi_read_sr1() & SR1_WEL) ? 1 : 0;}
-#define SPI_FLASH_WREN  0x06
-#define SPI_FLASH_WRDIS 0x04
-#define SPI_FLASH_WRR   0x01
-void spi_write_sr1cr1(uint8_t sr1,uint8_t cr1){
-    spi_select(SPI, 0);
-    spi_write(SPI,SPI_FLASH_WREN);
-    spi_diselect(SPI, 0);
-    assert_true(spi_write_enabled());
-    spi_select(SPI, 0);
-    spi_write(SPI, 0x01);//Write Registers (WRR 01h)
-    spi_write(SPI,sr1);
-    spi_write(SPI,cr1);
-    spi_diselect(SPI, 0);
-    while(spi_write_enabled());
-}
 #define TEST_BASE 0x123440
+#define TEST_DW0  0xEFCDAB89
+#define TEST_DW1  0x03020100
+#define TEST_DW2  0x07060504
 void test_xip(void){
-    volatile const uint32_t * const test_dat = (volatile const uint32_t*const)(SYSTEM_SPI_A_BMB+TEST_BASE);
-    assert_eq32(0xEFCDAB89,test_dat[0]);
-    GPIO_A->OUTPUT = 0xB;
-    assert_eq32(0x03020100,test_dat[1]);
-    GPIO_A->OUTPUT = 0xC;
-    assert_eq32(0x07060504,test_dat[2]);
-    GPIO_A->OUTPUT = 0xD;
-    assert_eq32(0xEFCDAB89,test_dat[0]);
-    GPIO_A->OUTPUT = 0x0;
+    volatile const uint32_t * const test_dat = (volatile const uint32_t*const)(SYSTEM_SPI_B_BMB+TEST_BASE);
+    assert_eq32(TEST_DW0,test_dat[0]);
+    GPIO_USER->OUTPUT = 0xB;
+    assert_eq32(TEST_DW1,test_dat[1]);
+    GPIO_USER->OUTPUT = 0xC;
+    assert_eq32(TEST_DW2,test_dat[2]);
+    GPIO_USER->OUTPUT = 0xD;
+    assert_eq32(TEST_DW0,test_dat[0]);
+    GPIO_USER->OUTPUT = 0x0;
     //dummy read to erase the test area from the cache
     uint32_t tmp=test_dat[4096/4];
     tmp=test_dat[4096/2];
 }
 
+uint8_t data_read[0x200];
+
+void print_info(void){
+    print("SFDP header\n");
+    flash_read_id(data_read, SFDP_HDR_SIZE, SFDP_HDR_BASE);
+    for(int i=0;i<SFDP_HDR_SIZE;i++){
+        print_hex(i,4);print(": ");print_hex(data_read[i],2);print("\n");
+    }
+    print("ID-CFI area\n");
+    flash_read_id(data_read, IDCFI_SIZE, IDCFI_BASE);
+    for(int i=0;i<IDCFI_SIZE;i++){
+        print_hex(i,4);print(": ");print_hex(data_read[i],2);print("\n");
+    }
+    uint8_t sr1=s25fl_read_reg(S25FL_READ_SR1);
+    print("SR1: ");print_hex(sr1, 2);print("\n");
+
+    #ifdef S25FL
+    uint8_t cr1=s25fl_read_cr1();
+    print("CR1: ");print_hex(cr1, 2);print("\n");
+    #endif
+
+    #ifdef N25Q
+    uint16_t nv_reg=n25q_read_nv_reg();
+    print("NV REG: ");print_hex(nv_reg, 4);print("\n");
+    #endif
+}
+
+uint32_t flash_basic_read32(uint32_t addr){
+    uint32_t out;
+    flash_basic_read(&out,4,addr);
+    return out;
+}
+
+int test_data_valid(void){
+    if(TEST_DW0!=flash_basic_read32(TEST_BASE)) return 0;
+    if(TEST_DW1!=flash_basic_read32(TEST_BASE+4)) return 0;
+    if(TEST_DW2!=flash_basic_read32(TEST_BASE+8)) return 0;
+    return 1;
+}
+
 void main() {
-    GPIO_A->OUTPUT = 0xA;
-    GPIO_A->OUTPUT_ENABLE = 0xF;
-
-    test_xip();//no init by software, use hardwired init values
-    GPIO_A->OUTPUT = 0xA;
-
-
-
-	init();
-    assert_eq32(0x89ABCDEF,fast_read32(0,TEST_BASE));
-    GPIO_A->OUTPUT = 0x0;
-    init_xip();
-    test_xip();
-    GPIO_A->OUTPUT = 0xA;
     init();
-    uint8_t cr1=spi_read_reg(SPI_FLASH_READ_CR1);//read Configuration Register 1
+    flash_init();
+    print_info();
+    const uint32_t addr = TEST_BASE;
+    uint32_t data_read[3];
+    if(GPIO_USER->INPUT & (1<<4)){//program the expected pattern in flash
+        GPIO_USER->OUTPUT = 0x0;
+        GPIO_USER->OUTPUT_ENABLE = 0x0F;
+        init();
+        print("\nReading at ");
+        print_hex(addr, 8);print("\n");
+        flash_basic_read(data_read, sizeof(data_read), addr);
+        print_hex(data_read[0], 8);print("\n");
+        print_hex(data_read[1], 8);print("\n");
+        print_hex(data_read[2], 8);print("\n");
 
-    if(0==(cr1 & CR1_QUAD)){//set CR1.QUAD
-        uint8_t sr1=spi_read_reg(SPI_FLASH_READ_SR1);//read Status Register 1
-        spi_write_sr1cr1(sr1,cr1|CR1_QUAD);
+        if(!test_data_valid()){
+            print("\nErasing sector at ");
+            print_hex(addr, 8);
+            print("\n\n");
+
+            flash_bulk_erase();
+            flash_wait();
+            assert_eq32(0xFFFFFFFF,flash_basic_read32(TEST_BASE));
+            GPIO_USER->OUTPUT = 0x2;
+
+            uint32_t data[] = {TEST_DW0,TEST_DW1,TEST_DW2};
+            print("Writing flash at ");
+            print_hex(addr, 8);
+            print("\n");
+            flash_write(data, sizeof(data), addr);
+            flash_wait();
+            GPIO_USER->OUTPUT = 0x3;
+            print("\nReading at ");
+            print_hex(addr, 8);print("\n");
+            flash_basic_read(data_read, sizeof(data_read),addr);
+            print_hex(data_read[0], 8);print("\n");
+            print_hex(data_read[1], 8);print("\n");
+            print_hex(data_read[2], 8);print("\n");
+        }
+        GPIO_USER->OUTPUT = 0x4;
+        assert_eq32(TEST_DW0,data_read[0]);
+        GPIO_USER->OUTPUT = 0x5;
+        assert_eq32(TEST_DW1,data_read[1]);
+        GPIO_USER->OUTPUT = 0x6;
+        assert_eq32(TEST_DW2,data_read[2]);
+        GPIO_USER->OUTPUT = 0x7;
+        while(1);
     }
+    GPIO_USER->OUTPUT = 0xA;
+    GPIO_USER->OUTPUT_ENABLE = 0x0F;
 
-    uint8_t test[] = {0,1,2,3,0};
-    //uint8_t test[] = {0,3};
-    for(int i=0;i<sizeof(test);i++){
-        int mode=test[i];
-        assert_eq32(0x89ABCDEF,fast_read32(mode,TEST_BASE));
-        GPIO_A->OUTPUT = mode;
+    //test_xip();//no init by software, use hardwired init values
+    GPIO_USER->OUTPUT = 0xA;
+
+    flash_basic_read(data_read, sizeof(data_read),addr);
+    print_hex(data_read[0], 8);print("\n");
+    print_hex(data_read[1], 8);print("\n");
+    print_hex(data_read[2], 8);print("\n");
+
+
+    assert_eq32(TEST_DW0,flash_basic_read32(TEST_BASE));
+    GPIO_USER->OUTPUT = 0x0;
+    //init_xip();
+    //test_xip();
+    GPIO_USER->OUTPUT = 0xA;
+
+    const spi_config_t configs[] = {
+        {1,false},
+        {4,true },
+        {2,false},
+        {2,true },
+        
+    };
+    for(int i=0;i<4;i++){
+        uint32_t val=0x55555555;
+        flash_read_with_config(&val, 4, TEST_BASE, &(configs[i]));
+        print("i ");print_hex(i, 1);print(": read val=");print_hex(val, 8);print("\n");
+        assert_eq32(TEST_DW0,val);
+        GPIO_USER->OUTPUT = i;
     }
-    assert_eq32(0x89ABCDEF,fast_read32_quad_init(TEST_BASE));
-    GPIO_A->OUTPUT = 0xB;
-    assert_eq32(0x00010203,fast_read32_quad_next());
-    GPIO_A->OUTPUT = 0xC;
-    assert_eq32(0x04050607,fast_read32_quad_next());
-    GPIO_A->OUTPUT = 0xD;
-    assert_eq32(0x89ABCDEF,fast_read32_quad(TEST_BASE));
-    GPIO_A->OUTPUT = 0x0;
+    /*assert_eq32(TEST_DW0,flash_read32(TEST_BASE));
+    GPIO_USER->OUTPUT = 0xB;
+    assert_eq32(TEST_DW1,flash_read32(TEST_BASE+4));
+    GPIO_USER->OUTPUT = 0xC;
+    assert_eq32(TEST_DW2,flash_read32(TEST_BASE+8));
+    GPIO_USER->OUTPUT = 0xD;
+    assert_eq32(TEST_DW0,flash_read32(TEST_BASE));
+    GPIO_USER->OUTPUT = 0x0;*/
 
+    int cnt=0;
     while(1){
-        GPIO_A->OUTPUT = 0xF & (GPIO_A->OUTPUT+1);
+        GPIO_USER->OUTPUT = 0xF & cnt++;
     }
 }

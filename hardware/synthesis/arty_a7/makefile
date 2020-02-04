@@ -1,7 +1,7 @@
 #ROOT shall point to location of build.sbt
 ROOT=../../..
 SWBASE=$(ROOT)/software/standalone
-SOCSW=bootloader
+SOCSW=blinkAndEcho
 SOCMEMSRC=$(SWBASE)/$(SOCSW)/build/$(SOCSW).elf
 SOCMEM=build/soc.mem
 
@@ -24,8 +24,9 @@ spi-flash-sw:
 generate:
 	(cd ../../..; sbt "runMain saxon.board.digilent.Arty7Linux")
 
-$(TOPV) : $(SOCMEM)
-	generate
+$(TOPV) : $(SOCMEM) ../../../hardware/scala/saxon/board/digilent/Arty7.scala
+	(cd ../../..; sbt "runMain saxon.board.digilent.Arty7Linux")
+
 
 .PHONY: $(SOCMEMSRC)
 $(SOCMEMSRC):

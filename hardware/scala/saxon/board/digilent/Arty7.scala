@@ -27,10 +27,20 @@ import vexriscv.plugin.CsrPlugin
 class Arty7LinuxSystem() extends SaxonSocLinux{
   //Add components
   val gpioA = Apb3GpioGenerator(0x00000)
-  val spiA = new Apb3SpiGenerator(0x20000, xipOffset = 0x20000000){
+  val gpioB = new Apb3GpioGenerator(0x40000)/*{
+      //val gpioB_phy = produce(logic.io.gpio)//does nothing
+      //produce(out(Bool).setName("gpioB0") := logic.io.gpio(0).write)//ok but inout remains
+  }*/
+  val spiA = new Apb3SpiGenerator(0x20000){
     val user = produce(master(phy.withoutSs.toSpi()).setName("system_spiA_user")) //TODO automatic naming
     val flash = produce(master(phy.decode(ssId = 0).toSpi()).setName("system_spiA_flash")) //TODO automatic naming
     val sdcard = produce(master(phy.decode(ssId = 1).toSpi()).setName("system_spiA_sdcard")) //TODO automatic naming
+  }
+
+  val spiB = new Apb3SpiGenerator(0x30000, xipOffset = 0x30000000){
+      //val user = produce(master(phy.withoutSs.toSpi()).setName("system_spiB_user"))
+      produce(phy.data.foreach(_.read.assignDontCare()))
+      val flash = produce(master(phy.decode(ssId = 0).toSpi()).setName("system_spiB_flash"))
   }
 
   val ramA = BmbOnChipRamGenerator(0xE0000000l)
@@ -87,6 +97,7 @@ class Arty7Linux extends Generator{
 
   val system = new Arty7LinuxSystem()
   system.onClockDomain(mainClockCtrl.clockDomain)
+
   system.sdramA.onClockDomain(sdramClockCtrl.clockDomain)
 
   val sdramDomain = new Generator{
@@ -107,7 +118,7 @@ class Arty7Linux extends Generator{
 
   val clocking = add task new Area{
     val GCLK100 = in Bool()
-
+    val cpu_reset = in Bool()
 
     mainClockCtrl.clkFrequency.load(100 MHz)
     sdramClockCtrl.clkFrequency.load(150 MHz)
@@ -148,6 +159,7 @@ class Arty7Linux extends Generator{
     pll.CLKIN1 := GCLK100
 
     mainClockCtrl.clock.load(pll.CLKOUT0)
+    mainClockCtrl.reset.load(cpu_reset)
 
     sdramClockCtrl.clock.load(pll.CLKOUT1)
     sdramDomain.phyA.clk90.load(ClockDomain(pll.CLKOUT2))
@@ -168,6 +180,7 @@ object Arty7LinuxSystem{
 
     cpu.config.load(VexRiscvConfigs.linuxTest(0xE0000000l))
     cpu.enableJtag(clockCtrl)
+    cpu.hardwareBreakpointCount.load(4)
 
     ramA.size.load(8 KiB)
     ramA.hexInit.load(null)
@@ -193,14 +206,34 @@ object Arty7LinuxSystem{
     )
     gpioA.connectInterrupts(plic, 4)
 
+    gpioB.parameter load Gpio.Parameter(
+      width = 8
+      ,output = List(0,1,2,3)
+      ,input = List(4,5,6,7)
+    )
+
     spiA.parameter load SpiXdrMasterCtrl.MemoryMappingParameters(
+      SpiXdrMasterCtrl.Parameters(
+        dataWidth = 8,
+        timerWidth = 12,
+        spi = SpiXdrParameter(
+          dataWidth = 2,
+          ioRate = 1,
+          ssWidth = 2
+        )
+      ) .addFullDuplex(id = 0),
+      cmdFifoDepth = 256,
+      rspFifoDepth = 256
+    )
+
+    spiB.parameter load SpiXdrMasterCtrl.MemoryMappingParameters(
       SpiXdrMasterCtrl.Parameters(
         dataWidth = 8,
         timerWidth = 12,
         spi = SpiXdrParameter(
           dataWidth = 4,
           ioRate = 1,
-          ssWidth = 2
+          ssWidth = 1
         )
     ).addFullDuplex(
         id = 0
@@ -216,26 +249,28 @@ object Arty7LinuxSystem{
       cpolInit = false,
       cphaInit = false,
       modInit = 0,
-      sclkToogleInit = 0,
-      ssSetupInit = 0,
-      ssHoldInit = 0,
-      ssDisableInit = 0,
+      sclkToogleInit = 20,
+      ssSetupInit = 20,
+      ssHoldInit = 20,
+      ssDisableInit = 20,
       xipConfigWritable = true,
       xipEnableInit = true,
       xipInstructionEnableInit = true,
       xipInstructionModInit = 0,
-      xipAddressModInit = 0,
-      xipDummyModInit = 0,
-      xipPayloadModInit = 1,
-      xipInstructionDataInit = 0x3B,
-      xipDummyCountInit = 0,
-      xipDummyDataInit = 0xFF
+      xipAddressModInit = 3,
+      xipDummyModInit = 3,
+      xipPayloadModInit = 3,
+      xipInstructionDataInit = 0xED,
+      xipDummyCountInit = 6,
+      xipDummyDataInit = 0xFF,
+      xipSsId = 0
     )
-    spiA.withXip.load(true)
+    spiB.withXip.load(true)
 
     interconnect.addConnection(
-      bridge.bmb -> List(spiA.bmb)
+      bridge.bmb -> List(spiB.bmb)
     )
+
 
     interconnect.setConnector(peripheralBridge.input){case (m,s) =>
       m.cmd.halfPipe >> s.cmd
@@ -266,12 +301,13 @@ object Arty7Linux {
   //Function used to configure the SoC
   def default(g : Arty7Linux) = g{
     import g._
-    mainClockCtrl.resetSensitivity.load(ResetSensitivity.NONE)
+    mainClockCtrl.resetSensitivity.load(ResetSensitivity.LOW)
     sdramDomain.phyA.sdramLayout.load(MT41K128M16JT.layout)
     Arty7LinuxSystem.default(system, mainClockCtrl)
     system.ramA.size.load(8 KiB)
     //system.ramA.hexInit.load("software/standalone/bootloader/build/bootloader.hex")
-    system.ramA.hexInit.load("software/standalone/spiDemo/build/spiDemo.hex")
+    //system.ramA.hexInit.load("software/standalone/spiDemo/build/spiDemo.hex")
+    system.ramA.hexInit.load("software/standalone/blinkAndEcho/build/blinkAndEcho.hex")
     system.cpu.produce(out(Bool).setName("inWfi") := system.cpu.config.plugins.find(_.isInstanceOf[CsrPlugin]).get.asInstanceOf[CsrPlugin].inWfi)
     g
   }
