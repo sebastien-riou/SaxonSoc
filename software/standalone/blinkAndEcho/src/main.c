@@ -15,7 +15,7 @@ void main() {
 
     uint32_t counter = 0;
     while(1){
-        if(counter++ == 1000){
+        if(counter++ == 10000){
             GPIO_USER->OUTPUT = GPIO_USER->OUTPUT + 1;
             counter = 0;
         }

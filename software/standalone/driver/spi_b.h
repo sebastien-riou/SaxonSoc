@@ -36,7 +36,8 @@ static void spib_config(const spi_config_t *const spi_config,Spi_Reg *spi){
         cfg.ssHold = spi_config->divider;
         cfg.ssDisable = spi_config->divider;
     }
-    while(spi_cmdAvailability(spi) != 0x100);
+    //while(spi_cmdAvailability(spi) != 0x100);
+    while(!spi_idle(spi));
     spi_applyConfig(spi, &cfg);
 }
 static void spib_write(const void*const src, uint32_t size,Spi_Reg *spi){

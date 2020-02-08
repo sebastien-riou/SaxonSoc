@@ -255,21 +255,25 @@ object SpiXdrMasterCtrl {
                                      cpolInit : Boolean = false,
                                      cphaInit : Boolean = false,
                                      modInit : Int = 0,
-                                     sclkToogleInit : Int = 0,
-                                     ssSetupInit : Int = 0,
-                                     ssHoldInit : Int = 0,
-                                     ssDisableInit : Int = 0,
+                                     sclkToogleInit : Int = 20,
+                                     ssSetupInit : Int = 20,
+                                     ssHoldInit : Int = 20,
+                                     ssDisableInit : Int = 20,
                                      ssActiveHighInit : Int = 0,
                                      xipInstructionModInit: Int = 0,
                                      xipAddressModInit : Int = 0,
-                                     xipDummyModInit : Int = 0,
                                      xipPayloadModInit : Int = 0,
-                                     xipConfigWritable : Boolean = true,
-                                     xipEnableInit : Boolean = false,
+                                     xipEnableInit : Boolean = true,
                                      xipInstructionEnableInit : Boolean = true,
                                      xipInstructionDataInit : Int = 0x0B,
-                                     xipDummyCountInit : Int = 0,
-                                     xipDummyDataInit : Int = 0xFF,
+                                     xipDummy0ModInit : Int = 0,
+                                     xipDummy0WriteInit : Boolean = false,
+                                     xipDummy0CountInit : Int = 1,
+                                     xipDummy0DataInit : Int = 0xFF,
+                                     xipDummy1ModInit : Int = 0,
+                                     xipDummy1WriteInit : Boolean = false,
+                                     xipDummy1CountInit : Int = 0,
+                                     xipDummy1DataInit : Int = 0xFF,
                                      xipSsId : Int = 0,
                                      xip : XipBusParameters = null)
 
@@ -375,6 +379,10 @@ object SpiXdrMasterCtrl {
       val rspIntEnable  = bus.createReadAndWrite(Bool, address = baseAddress + 12, 1) init(False)
       val cmdInt = bus.read(cmdIntEnable & !cmdLogic.stream.valid, address = baseAddress + 12, 8)
       val rspInt = bus.read(rspIntEnable &  rspLogic.stream.valid, address = baseAddress + 12, 9)
+      val writeFifoEmpty = cmdLogic.fifoAvailability === cmdFifoDepth
+      val readFifoEmpty = rspLogic.fifoOccupancy === 0
+      bus.read(writeFifoEmpty, address = baseAddress + 12, 30)
+      bus.read(readFifoEmpty, address = baseAddress + 12, 31)
       val interrupt = rspInt || cmdInt
     }
 
@@ -408,26 +416,37 @@ object SpiXdrMasterCtrl {
       val instructionEnable = Bool
       val instructionData = Bits(8 bits)
       val addressMod = p.ModType()
-      val dummyCount = UInt(4 bits)
-      val dummyData = Bits(8 bits)
-      val dummyMod = p.ModType()
+      val dummy0Mod   = p.ModType()
+      val dummy0Write = Bool
+      val dummy0Data  = Bits(8 bits)
+      val dummy0Count = UInt(8 bits)
+      val dummy1Mod   = p.ModType()
+      val dummy1Write = Bool
+      val dummy1Data  = Bits(8 bits)
+      val dummy1Count = UInt(8 bits)
       val payloadMod = p.ModType()
 
-      bus.driveAndRead(enable, baseAddress + 0x40) init(True)
+      bus.driveAndRead(instructionData,   baseAddress + 0x40, bitOffset = 0) init(xipInstructionDataInit)
+      bus.driveAndRead(instructionEnable, baseAddress + 0x40, bitOffset = 8) init(Bool(xipInstructionEnableInit))
+      bus.driveAndRead(enable,            baseAddress + 0x40, bitOffset = 9) init(True)
 
-      bus.driveAndRead(instructionData, baseAddress + 0x44, bitOffset = 0) init(xipInstructionDataInit)
-      bus.driveAndRead(instructionEnable, baseAddress + 0x44, bitOffset = 8) init(Bool(xipInstructionEnableInit))
-      bus.driveAndRead(dummyData, baseAddress + 0x44, bitOffset = 16) init(xipDummyDataInit)
-      bus.driveAndRead(dummyCount, baseAddress + 0x44, bitOffset = 24) init(xipDummyCountInit)
+      bus.driveAndRead(dummy0Mod,         baseAddress + 0x44, bitOffset = 0)  init(xipDummy0ModInit  )
+      bus.driveAndRead(dummy0Write,       baseAddress + 0x44, bitOffset = 8)  init(xipDummy0WriteInit)
+      bus.driveAndRead(dummy0Data,        baseAddress + 0x44, bitOffset = 16) init(xipDummy0DataInit)
+      bus.driveAndRead(dummy0Count,       baseAddress + 0x44, bitOffset = 24) init(xipDummy0CountInit )
 
-      bus.driveAndRead(instructionMod, baseAddress + 0x48, bitOffset = 0) init(xipInstructionModInit)
-      bus.driveAndRead(addressMod, baseAddress + 0x48, bitOffset = 8) init(xipAddressModInit)
-      bus.driveAndRead(dummyMod, baseAddress + 0x48, bitOffset = 16) init(xipDummyModInit)
-      bus.driveAndRead(payloadMod, baseAddress + 0x48, bitOffset = 24) init(xipPayloadModInit)
+      bus.driveAndRead(dummy1Mod,         baseAddress + 0x48, bitOffset = 0)  init(xipDummy1ModInit  )
+      bus.driveAndRead(dummy1Write,       baseAddress + 0x48, bitOffset = 8)  init(xipDummy1WriteInit)
+      bus.driveAndRead(dummy1Data,        baseAddress + 0x48, bitOffset = 16) init(xipDummy1DataInit)
+      bus.driveAndRead(dummy1Count,       baseAddress + 0x48, bitOffset = 24) init(xipDummy1CountInit )
+
+      bus.driveAndRead(instructionMod,    baseAddress + 0x4C, bitOffset = 0) init(xipInstructionModInit)
+      bus.driveAndRead(addressMod,        baseAddress + 0x4C, bitOffset = 8) init(xipAddressModInit)
+      bus.driveAndRead(payloadMod,        baseAddress + 0x4C, bitOffset = 24) init(xipPayloadModInit)
 
 
       val fsm = new StateMachine{
-        val IDLE, INSTRUCTION, ADDRESS, DUMMY, PAYLOAD, STOP = State()
+        val IDLE, INSTRUCTION, ADDRESS, DUMMY0, DUMMY1, PAYLOAD, STOP = State()
         setEntry(IDLE)
 
         val cmdLength = Reg(UInt(mapping.xip.lengthWidth bits))
@@ -512,23 +531,51 @@ object SpiXdrMasterCtrl {
             counter := counter + 1
             when(counter === 2) {
               xipBusCmdReadyReg := True
-              goto(DUMMY)
+              when(0 === dummy0Count){
+                  when(0 === dummy1Count){
+                      goto(PAYLOAD)
+                  } otherwise {
+                      goto(DUMMY1)
+                  }
+              } otherwise {
+                  goto(DUMMY0)
+              }
             }
           }
         }
 
 
-        DUMMY.onEntry(counter := 0)
-        DUMMY.whenIsActive{
+        DUMMY0.onEntry(counter := 0)
+        DUMMY0.whenIsActive{
           xipToCtrlCmd.valid := True
           xipToCtrlCmd.kind := False
-          xipToCtrlCmd.write := False
+          xipToCtrlCmd.write := dummy0Write
           xipToCtrlCmd.read := False
-          xipToCtrlCmd.data := dummyData
-          xipToCtrlMod := dummyMod
+          xipToCtrlCmd.data := dummy0Data
+          xipToCtrlMod := dummy0Mod
           when(xipToCtrlCmd.ready) {
             counter := counter + 1
-            when(counter === dummyCount) {
+            when(counter === dummy0Count-1) {
+                when(0 === dummy1Count){
+                    goto(PAYLOAD)
+                } otherwise {
+                    goto(DUMMY1)
+                }
+            }
+          }
+        }
+
+        DUMMY1.onEntry(counter := 0)
+        DUMMY1.whenIsActive{
+          xipToCtrlCmd.valid := True
+          xipToCtrlCmd.kind := False
+          xipToCtrlCmd.write := dummy1Write
+          xipToCtrlCmd.read := False
+          xipToCtrlCmd.data := dummy1Data
+          xipToCtrlMod := dummy1Mod
+          when(xipToCtrlCmd.ready) {
+            counter := counter + 1
+            when(counter === dummy1Count-1) {
               goto(PAYLOAD)
             }
           }

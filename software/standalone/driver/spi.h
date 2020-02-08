@@ -19,8 +19,7 @@ typedef struct
 
   volatile u32 _rfu[4];
 
-  volatile u32 XIPEN;
-  volatile u32 XIPCFG[2];
+  volatile u32 XIPCFG[4];
 } Spi_Reg;
 
 typedef struct {
@@ -48,7 +47,9 @@ typedef struct {
 #define SPI_MODE_CPOL (1 << 0)
 #define SPI_MODE_CPHA (1 << 1)
 
-
+static u32 spi_idle(Spi_Reg *reg){
+    return 3==(reg->INTERRUPT>>30);
+}
 static u32 spi_cmdAvailability(Spi_Reg *reg){
 	return reg->BUFFER & 0xFFFF;
 }
