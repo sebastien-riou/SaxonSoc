@@ -155,12 +155,49 @@ void demo_id(void){
     }
 }
 
+
+void dump_spi_regs(void){
+    uint32_t*regs = (uint32_t*)SPI;
+    print("SPI regs at ");print_hex(regs,8);print("\n");
+    for(int i=0;i<12;i++){
+        print_hex(i,2);print(": ");print_hex(regs[i],8);print("\n");
+    }
+    regs +=0x10;
+    print("SPI regs at ");print_hex(regs,8);print("\n");
+    for(int i=0;i<16;i++){
+        print_hex(i,2);print(": ");print_hex(regs[i],8);print("\n");
+    }
+}
+
+
 #define TEST_BASE 0x123440
 #define TEST_DW0  0xEFCDAB89
 #define TEST_DW1  0x03020100
 #define TEST_DW2  0x07060504
+
+#define XIPCFG0_DUMMY_DATA_POS 16
+#define XIPCFG0_DUMMY_DATA_WIDTH 8
+#define XIPCFG0_DUMMY_DATA_MASK (((1<<XIPCFG0_DUMMY_DATA_WIDTH)-1)<<XIPCFG0_DUMMY_DATA_POS)
+#define XIPCFG0_DUMMY_CNT_POS 24
+#define XIPCFG0_DUMMY_CNT_WIDTH 8
+#define XIPCFG0_DUMMY_CNT_MASK (((1<<XIPCFG0_DUMMY_CNT_WIDTH)-1)<<XIPCFG0_DUMMY_CNT_POS)
+
 void test_xip(void){
+
+    //SPI->XIPCFG[0] = (SPI->XIPCFG[0] & ~XIPCFG0_DUMMY_DATA_MASK) | (0<<XIPCFG0_DUMMY_DATA_POS);
+    SPI->XIPCFG[0] = (SPI->XIPCFG[0] & ~XIPCFG0_DUMMY_CNT_MASK) | (4<<XIPCFG0_DUMMY_CNT_POS);
+
+    //SPI->XIPCFG[0] = 0x10B;
+    //SPI->XIPCFG[1] = 0;
+    dump_spi_regs();
+
     volatile const uint32_t * const test_dat = (volatile const uint32_t*const)(SYSTEM_SPI_B_BMB+TEST_BASE);
+    //dummy read to erase the test area from the cache
+    uint32_t tmp=test_dat[4096/4];
+
+    for(int i=0;i<3;i++){
+        print_hex(test_dat+i, 8);print(": ");print_hex(test_dat[i], 8);print("\n");
+    }
     assert_eq32(TEST_DW0,test_dat[0]);
     GPIO_USER->OUTPUT = 0xB;
     assert_eq32(TEST_DW1,test_dat[1]);
@@ -170,8 +207,7 @@ void test_xip(void){
     assert_eq32(TEST_DW0,test_dat[0]);
     GPIO_USER->OUTPUT = 0x0;
     //dummy read to erase the test area from the cache
-    uint32_t tmp=test_dat[4096/4];
-    tmp=test_dat[4096/2];
+    tmp=test_dat[4096/4];
 }
 
 uint8_t data_read[0x200];
@@ -214,8 +250,26 @@ int test_data_valid(void){
     return 1;
 }
 
+void exit_quad(void){
+    spi_config_t config4x = {4,true,20 };
+    flash_spi_config(&config4x);
+    flash_spi_select(1);
+    flash_spi_write8(0xF5);
+    flash_spi_select(0);
+    spi_config_t config1x = {1,false,20 };
+    flash_spi_config(&config1x);
+    n25q_write_nv_reg(0xFFFF);
+}
+
 void main() {
+    dump_spi_regs();
     init();
+    //exit_quad();
+    //n25q_write_nv_reg(0xFFFF);
+    //const spi_config_t config = {4,true,20 };
+    //uint32_t val=0x55555555;
+    //flash_read_with_config(&val, 4, TEST_BASE, &config);
+    //print_info();
     flash_init();
     print_info();
     const uint32_t addr = TEST_BASE;
@@ -283,13 +337,11 @@ void main() {
     GPIO_USER->OUTPUT = 0xA;
 
     const spi_config_t configs[] = {
-        {1,false},
-        {4,true },
-        {2,false},
-        {2,true },
-        
+        {1,false,20},
+        {2,false,20},
+        {4,false,20},
     };
-    for(int i=0;i<4;i++){
+    for(int i=0;i<3;i++){
         uint32_t val=0x55555555;
         flash_read_with_config(&val, 4, TEST_BASE, &(configs[i]));
         print("i ");print_hex(i, 1);print(": read val=");print_hex(val, 8);print("\n");
@@ -304,7 +356,7 @@ void main() {
     GPIO_USER->OUTPUT = 0xD;
     assert_eq32(TEST_DW0,flash_read32(TEST_BASE));
     GPIO_USER->OUTPUT = 0x0;*/
-
+    test_xip();
     int cnt=0;
     while(1){
         GPIO_USER->OUTPUT = 0xF & cnt++;

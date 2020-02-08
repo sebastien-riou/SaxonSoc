@@ -40,7 +40,8 @@ static unsigned int n25q_read_nv_reg(void){
 }
 
 static void n25q_write_nv_reg(uint16_t nv_reg){
-    flash_spi_select(1);
+    //skip it to avoid misconfiguring devices
+/*    flash_spi_select(1);
     flash_spi_write8(S25FL_WREN);
     flash_spi_select(0);
     assert_true(s25fl_write_enabled());
@@ -49,7 +50,7 @@ static void n25q_write_nv_reg(uint16_t nv_reg){
     flash_spi_write8(nv_reg>>8);
     flash_spi_write8(nv_reg & 0xFF);
     flash_spi_select(0);
-    while(s25fl_write_enabled());
+    while(s25fl_write_enabled());*/
 }
 
 static void n25q_init(void){
@@ -71,22 +72,28 @@ static void n25q_read_with_config(void*const dst, uint32_t size, uint32_t addr, 
     flash_spi_select(1);
     const uint8_t default_op = 0x0B;
     uint8_t op;
+    int dummy_cycles=1;
     switch(config->data_width){
-        case 1: op =  default_op;assert_true(false==config->ddr);break;
-        case 2: op = config->ddr ? 0xBD : 0xBB; break;
-        case 4: op = 0xED; assert_true(true==config->ddr); break;
+        case 1: op = default_op;assert_true(false==config->ddr);break;
+        case 2: op = config->ddr ? 0x3D : 0xBB; dummy_cycles = 2;break;
+        case 4: op = config->ddr ? 0xED : 0xEB; dummy_cycles = 5; break;
         default: assert_true(false);
     }
 	flash_spi_write8(op);
-    if(default_op!=op){
+    if((default_op!=op) && (0==config->ddr)){
         flash_spi_config(config);
     }
     _s25fl_write_addr(addr);
+    if((default_op!=op) && (config->ddr)){//for DDR we use the output direction only, input is tricky to get to work, depends on PCB tracks length
+        assert_true(0);//cannot get DDR to work for now
+        dummy_cycles = 16;
+        flash_spi_config(config);
+    }
     uint8_t dummy=0;
-    for(int i=0;i<1;i++) flash_spi_read(&dummy,1);//dummy cycles
+    for(int i=0;i<dummy_cycles;i++) flash_spi_read(&dummy,1);//dummy cycles
 	flash_spi_read(dst,size);
-	flash_spi_select(0);
     flash_spi_config(0);
+	flash_spi_select(0);
 }
 
 static void     n25q_bulk_erase(void) {s25fl_bulk_erase();}

@@ -16,10 +16,12 @@ typedef struct
   volatile u32 SS_SETUP;
   volatile u32 SS_HOLD;
   volatile u32 SS_DISABLE;
+
+  volatile u32 _rfu[4];
+
+  volatile u32 XIPEN;
+  volatile u32 XIPCFG[2];
 } Spi_Reg;
-
-
-
 
 typedef struct {
 	u32 cpol;
@@ -85,5 +87,3 @@ static void spi_applyConfig(Spi_Reg *reg, Spi_Config *config){
 }
 
 #endif /* SPI_H_ */
-
-

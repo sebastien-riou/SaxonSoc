@@ -8,7 +8,8 @@ import spinal.lib.bus.amba3.apb.Apb3Config
 import spinal.lib.bus.amba3.apb.sim.{Apb3Listener, Apb3Monitor}
 import spinal.lib.com.jtag.sim.JtagTcp
 import spinal.lib.com.spi.SpiHalfDuplexMaster
-import spinal.lib.com.spi.ddr.{SpiXdrMasterCtrl, SpiXdrParameter}
+//import spinal.lib.com.spi.ddr.{SpiXdrMasterCtrl,SpiXdrParameter}
+import nimp.lib.com.spi.{SpiXdrMasterCtrl,SpiXdrParameter}
 import spinal.lib.com.uart.UartCtrlMemoryMappedConfig
 import spinal.lib.com.uart.sim.{UartDecoder, UartEncoder}
 import spinal.lib.eda.bench.{Bench, Rtl, XilinxStdTargets}
@@ -31,13 +32,13 @@ class Arty7LinuxSystem() extends SaxonSocLinux{
       //val gpioB_phy = produce(logic.io.gpio)//does nothing
       //produce(out(Bool).setName("gpioB0") := logic.io.gpio(0).write)//ok but inout remains
   }*/
-  val spiA = new Apb3SpiGenerator(0x20000){
+  val spiA = new Apb3NimpSpiGenerator(0x20000){
     val user = produce(master(phy.withoutSs.toSpi()).setName("system_spiA_user")) //TODO automatic naming
     val flash = produce(master(phy.decode(ssId = 0).toSpi()).setName("system_spiA_flash")) //TODO automatic naming
     val sdcard = produce(master(phy.decode(ssId = 1).toSpi()).setName("system_spiA_sdcard")) //TODO automatic naming
   }
 
-  val spiB = new Apb3SpiGenerator(0x30000, xipOffset = 0x30000000){
+  val spiB = new Apb3NimpSpiGenerator(0x30000, xipOffset = 0x30000000){
       //val user = produce(master(phy.withoutSs.toSpi()).setName("system_spiB_user"))
       produce(phy.data.foreach(_.read.assignDontCare()))
       val flash = produce(master(phy.decode(ssId = 0).toSpi()).setName("system_spiB_flash"))
@@ -240,9 +241,11 @@ object Arty7LinuxSystem{
     ).addHalfDuplex(
         id=1, rate=1, ddr=false, spiWidth=2, ouputHighWhenIdle=false
     ).addHalfDuplex(
-        id=2, rate=1, ddr=true, spiWidth=2, ouputHighWhenIdle=false
+        id=2, rate=1, ddr=true,  spiWidth=2, ouputHighWhenIdle=false
     ).addHalfDuplex(
-        id=3, rate=1, ddr=true, spiWidth=4, ouputHighWhenIdle=false
+        id=3, rate=1, ddr=false, spiWidth=4, ouputHighWhenIdle=false
+    ).addHalfDuplex(
+        id=4, rate=1, ddr=true,  spiWidth=4, ouputHighWhenIdle=false
     ),
       cmdFifoDepth = 256,
       rspFifoDepth = 256,
@@ -260,8 +263,8 @@ object Arty7LinuxSystem{
       xipAddressModInit = 3,
       xipDummyModInit = 3,
       xipPayloadModInit = 3,
-      xipInstructionDataInit = 0xED,
-      xipDummyCountInit = 6,
+      xipInstructionDataInit = 0xEB,
+      xipDummyCountInit = 5,
       xipDummyDataInit = 0xFF,
       xipSsId = 0
     )

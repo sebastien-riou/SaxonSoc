@@ -6,11 +6,13 @@ import spinal.lib.bus.bmb.{Bmb, BmbParameter}
 import spinal.lib.bus.misc.{AddressMapping, BusSlaveFactory, SizeMapping}
 import spinal.lib.com.spi.SpiHalfDuplexMaster
 import spinal.lib.com.spi.ddr.{Apb3SpiXdrMasterCtrl, SpiXdrMasterCtrl}
+import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBusParameters
+//import nimp.lib.com.spi.{Apb3SpiXdrMasterCtrl, SpiXdrMasterCtrl}
+//import nimp.lib.com.spi.SpiXdrMasterCtrl.XipBusParameters
 import spinal.lib.com.uart.{Apb3UartCtrl, UartCtrlGenerics, UartCtrlInitConfig, UartCtrlMemoryMappedConfig, UartParityType, UartStopType}
 import spinal.lib.generator._
 import spinal.lib.io.Apb3Gpio2
 import spinal.lib._
-import spinal.lib.com.spi.ddr.SpiXdrMasterCtrl.XipBusParameters
 import spinal.lib.misc.MachineTimer
 import spinal.lib.misc.plic.{PlicGateway, PlicGatewayActiveHigh, PlicMapper, PlicMapping, PlicTarget}
 
@@ -120,7 +122,6 @@ class Apb3SpiGenerator(apbOffset : Handle[BigInt] = Unset, xipOffset : Handle[Bi
   }))
   def phyAsIo() = produceIo(phy.get)
 }
-
 
 
 

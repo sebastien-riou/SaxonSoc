@@ -28,7 +28,7 @@ static void spib_config(const spi_config_t *const spi_config,Spi_Reg *spi){
         switch(spi_config->data_width){
             case 1: assert_true(false==spi_config->ddr);break;
             case 2: cfg.mode = spi_config->ddr ? 2:1; break;
-            case 4: cfg.mode = 3; assert_true(true==spi_config->ddr); break;
+            case 4: cfg.mode = spi_config->ddr ? 4:3; break;
             default: assert_true(false);
         }
         cfg.clkDivider = spi_config->divider;

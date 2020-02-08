@@ -23,11 +23,14 @@
 #define S25FL_FAST_READ1X_SDR    0x0B
 #define S25FL_READ_CR1           0x35
 #define S25FL_FAST_READ2x_SDR    0x3B
+#define S25FL_FAST_READ2x_DDR    0x3D
+#define S25FL_FAST_READ4x_DDR    0x6D
 #define S25FL_READ_ID            0x9F
 #define S25FL_FAST_READ2x_SDR_IO 0xBB
 #define S25FL_FAST_READ2x_DDR_IO 0xBD
 #define S25FL_BULK_ERASE         0xC7
 #define S25FL_SECTOR_ERASE       0xD8
+#define S25FL_FAST_READ4x_SDR_IO 0xEB
 #define S25FL_FAST_READ4x_DDR_IO 0xED
 
 #define S25FL_SR1_WIP 1
